@@ -1,6 +1,6 @@
 """This task runs clang-tidy on the file."""
 
-from subprocess import Popen, PIPE
+import subprocess
 import sys
 
 from wpiformat.task import Task
@@ -33,22 +33,35 @@ class ClangTidy(Task):
 
     def run_standalone(self, config_file, name):
         try:
-            p = Popen([self.exec_name] + self.args + [name],
-                      encoding="utf-8",
-                      stdout=PIPE,
-                      stderr=PIPE)
-            output = p.communicate()[0]
+            output = subprocess.run([self.exec_name] + self.args + [name],
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT,
+                                    encoding="utf-8").stdout
         except FileNotFoundError:
             print("Error: " + self.exec_name +
                   " not found in PATH. Is it installed?",
                   file=sys.stderr)
             return False
 
-        lines = [l for l in output.split('\n') if l]
+        lines = [l for l in output.rstrip().split('\n') if l]
 
-        # ignore include file not found errors at beginning
-        if lines and "file not found [clang-diagnostic-error]" in lines[0]:
-            lines = lines[3:]
+        # Filter out "X error(s) and Y warning(s) generated." lines
+        lines = [l for l in lines if " generated." not in l]
+
+        # Filter out "Error while processing" lines
+        lines = [l for l in lines if "Error while processing" not in l]
+
+        # Ignore include file not found errors
+        filtered_lines = []
+        iterlines = iter(lines)
+        for l in iterlines:
+            if "file not found [clang-diagnostic-error]" in l:
+                # Skip #include line and caret indicator line
+                next(iterlines)
+                next(iterlines)
+            else:
+                filtered_lines.append(l)
+        lines = filtered_lines
 
         if lines:
             print("== clang-tidy " + name + " ==")
